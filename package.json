@@ -1,0 +1,10 @@
+{
+  "name": "jeu-quel-pays",
+  "version": "1.0.0",
+  "description": "utils to crop images",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "glob": "^7.1.6"
+  }
+}
