@@ -29,22 +29,61 @@ async function prepareImages() {
   const idGenerator = new UniqueIdGenerator();
   const associations = {};
 
+  const allCountries = files.map((file) => path.parse(file).name);
+
   for (const file of files) {
-    const { name, ext } = path.parse(file);
+    const { name, ext, base, dir } = path.parse(file);
     console.log('Processing: ', file);
     const { width, height } = await extractImageDimensions(file);
 
     const id = idGenerator.getNew();
     associations[id] = name;
 
-    await executeCmd(
-      `convert -crop ${width / 2}x${height}+0+${height * 0.1} ${file} ${path.join(OUT_DIR, `men.${id}${ext}`)}`,
-    );
-    await executeCmd(
-      `convert -crop ${width / 2}x${height}+${width / 2}+0 ${file} ${path.join(OUT_DIR, `women.${id}${ext}`)}`,
-    );
+    /**
+     * C'était pas une bonne idée de couper en 2, ca sert à rien.
+     * On veut maintenant:
+     * - couper le titre (à 10%) ✅
+     * - ajouter une zone au dessus de la photo pour écrire les réponses possibles ✅
+     * - prendre 3 réponses aléatoires + la bonne réponse ✅
+     * - les mélanger ✅
+     * - les afficher les uns à la suite des autres ✅
+     * - noter la bonne réponse ✅
+     * - pour lire plus facilemnt les bonnes répoonses, les ordonner dans l'ordre alphabétique
+     */
+    const newFileName = path.join(OUT_DIR, base);
+    await executeCmd(`convert -crop ${width}x${height}+0+${height * 0.1} ${file} ${newFileName}`);
+
+    const LEFT_OFFSET = 20;
+    const POINT_SIZE = 20;
+    const HORIZONTAL_MARGIN = 40;
+    const BORDER_HEIGHT = 4 * POINT_SIZE + HORIZONTAL_MARGIN;
+    await executeCmd(`convert -background white -splice 0x${BORDER_HEIGHT} ${newFileName} ${newFileName}`);
+
+    const randomAnswers = shuffle(allCountries.filter((country) => country != name)).slice(0, 3);
+    const answers = shuffle([name, ...randomAnswers]);
+
+    for (let index = 0; index < answers.length; index++) {
+      const answer = answers[index];
+      await executeCmd(
+        `convert -pointsize ${POINT_SIZE} -fill black -draw 'text ${LEFT_OFFSET}, ${
+          (index + 1) * POINT_SIZE
+        } "${index} - ${answer}"' -background white ${newFileName} ${newFileName}`,
+      );
+    }
+
+    // rename image and keep answer
+    const obfuscatedFileName = path.join(OUT_DIR, `${id}${ext}`);
+    await executeCmd(`mv ${newFileName} ${obfuscatedFileName}`);
   }
-  await writeFile(path.join(OUT_DIR, ANSWER_FILE), JSON.stringify(associations, null, 2));
+
+  const ordered = {};
+  Object.keys(associations)
+    .sort()
+    .forEach(function (key) {
+      ordered[key] = associations[key];
+    });
+
+  await writeFile(path.join(OUT_DIR, ANSWER_FILE), JSON.stringify(ordered, null, 2));
 }
 prepareImages();
 
@@ -82,6 +121,10 @@ async function getFilesToProcess() {
   return files.flat();
 }
 
+async function getOneFile() {
+  return ['./image-de-base.jpg'];
+}
+
 /**
  * Return stdout as an array without last line
  * @param {string} cmd the command line to execute
@@ -102,4 +145,8 @@ async function extractImageDimensions(file) {
   const [_filename, _ext, dimensions, _rest] = lines[0].split(' ');
   const [width, height] = dimensions.split('x').map((val) => parseInt(val, 10));
   return { width, height };
+}
+
+function shuffle(array) {
+  return array.sort(() => Math.random() - 0.5);
 }
